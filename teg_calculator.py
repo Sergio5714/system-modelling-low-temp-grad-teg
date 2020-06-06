@@ -21,9 +21,10 @@ class TegPowerCalculator:
         self.input_voltage_range = [0, 0.2]
 
         ## Upload spline models
-        with open('interpolators\\interpolator_1D_eff.pkl', 'rb') as f:
+        dir_path = os.path.dirname(os.path.abspath(__file__))
+        with open(dir_path + '\\' + 'interpolators\\interpolator_1D_eff.pkl', 'rb') as f:
             self.spl_efficiency = pickle.load(f)
-        with open('interpolators\\interpolator_1D_imp.pkl', 'rb') as f:
+        with open(dir_path + '\\' + 'interpolators\\interpolator_1D_imp.pkl', 'rb') as f:
             self.spl_input_resistance = pickle.load(f)
 
         ## Define the optimized parameters of the model
@@ -80,7 +81,7 @@ class TegPowerCalculator:
 
     # Function for root-finding algorithm
     def funct_to_find_root(self, dT_tem):
-        r_in = self.custom_func_input_resistance(np.array([self.alpha * dT_tem, self.el_res]).reshape(1,                                          -1), 
+        r_in = self.custom_func_input_resistance(np.array([self.alpha * dT_tem, self.el_res]).reshape(1,-1), 
                                                 *self.popt_input_resistance)[0]
         R_eff = self.calc_therm_res(el_res_load=r_in)
         return (dT_tem - self.dT/ (R_eff + self.therm_res_ext) * R_eff)
@@ -91,6 +92,31 @@ class TegPowerCalculator:
         # Calculate numerically temp. diff. across the thermoelectric module
         sol = root_scalar(self.funct_to_find_root, bracket=[0, self.dT], method='brentq')
         self.dT_tem = sol.root
+
+        # Check the boundaries
+        if self.alpha * self.dT_tem > self.VOLTAGE_THRESHOLD:
+            print("/n The input voltage for the converter is out of range [0 mV, 200 mV].\n")
+            print("The output power is forced to 0.\n")
+            return 0
+
+        input_V_r = np.array([self.alpha * self.dT_tem, self.el_res]).reshape(1,-1)
+        eff = self.custom_func_efficiency(input_V_r, *self.popt_efficiency)[0]
+        r_in = self.custom_func_input_resistance(input_V_r, *self.popt_input_resistance)
+        
+        w = eff * (self.alpha * self.dT_tem) ** 2 / (self.el_res + r_in)
+        return w * 1000
+
+        # Function for calculation the generated power in mW
+    def calc_power_conventional_mw(self):
+        
+        # Calculate temp. diff. across the thermoelectric module
+
+        R_eff = self.therm_res
+
+        self.dT_tem = self.dT/ (R_eff + self.therm_res_ext) * R_eff
+
+        r_in = self.custom_func_input_resistance(np.array([self.alpha * self.dT_tem, self.el_res]).reshape(1,-1), 
+                                                *self.popt_input_resistance)[0]
 
         # Check the boundaries
         if self.alpha * self.dT_tem > self.VOLTAGE_THRESHOLD:
