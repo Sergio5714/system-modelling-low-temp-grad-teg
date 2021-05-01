@@ -4,12 +4,13 @@ import pickle
 from scipy.optimize import root_scalar
 
 class TegPowerCalculator:
-    def __init__(self, alpha, el_res, therm_res, T_aver, dT, therm_res_ext):
+    def __init__(self, alpha, el_res, therm_res, T_aver, dT, therm_res_ext, el_res_parasitic=0):
         # Constructor
 
-        ## Parameters of the thermoelectric module nad thermal system
+        ## Parameters of the thermoelectric module фтв thermal system
         self.alpha = alpha
         self.el_res = el_res
+        self.el_res_parasitic = el_res_parasitic
         self.therm_res = therm_res
         self.T_aver = T_aver
         self.dT = dT
@@ -30,20 +31,20 @@ class TegPowerCalculator:
         ## Define the optimized parameters of the model
 
         ### Coefficients for the linear spproximation of the efficiency "tail"
-        self.spl_eff_tail_linear_coef = [-0.5956149009262293, 0.23577876753914806]
+        self.spl_eff_tail_linear_coef = [-0.49332607889101876, 0.22939273235763408]
         ### Optimal parameters for the efficiency approximation
-        self.popt_efficiency = np.array([4.36379927e+00,  3.10483238e+00,  7.41306138e-02,  4.16162114e+00,
-        2.72031914e+00,  5.88603450e-03, -3.30677053e-03,  3.02484771e-03])
+        self.popt_efficiency = np.array([ 3.86054210e+00,  2.71372329e+00,  9.52156532e-02,  3.99017187e+00,
+        2.47051159e+00,  1.97878745e-03, -3.92471024e-03,  5.28872970e-03])
         ### Optimal parameters for input resistance approximation
-        self.popt_input_resistance = np.array([1.00910076e+00,  3.86880519e+00,  2.34586212e+00, -3.24674359e-03,
-        -3.40604001e-03,  4.96738635e-03])
+        self.popt_input_resistance = np.array([ 1.00000000e+00,  3.73786403e+00,  2.27262651e+00, -3.05612960e-03,
+       -3.92613447e-03,  5.34495183e-03])
 
         ## Voltage threshold of 0.2 V for the power converter model
         self.VOLTAGE_THRESHOLD = 0.2
 
-    # Calculate effective thermal resistanceof the thermoelectric module
+    # Calculate effective thermal resistance of the thermoelectric module
     def calc_therm_res(self, el_res_load):
-        R = self.therm_res/(1 + self.ZT/(el_res_load/self.el_res + 1))
+        R = self.therm_res/(1 + self.ZT/((el_res_load + self.el_res_parasitic)/self.el_res + 1))
         return R
     
     # Calculate 
@@ -81,7 +82,7 @@ class TegPowerCalculator:
 
     # Function for root-finding algorithm
     def funct_to_find_root(self, dT_tem):
-        r_in = self.custom_func_input_resistance(np.array([self.alpha * dT_tem, self.el_res]).reshape(1,-1), 
+        r_in = self.custom_func_input_resistance(np.array([self.alpha * dT_tem, self.el_res + self.el_res_parasitic]).reshape(1,-1), 
                                                 *self.popt_input_resistance)[0]
         R_eff = self.calc_therm_res(el_res_load=r_in)
         return (dT_tem - self.dT/ (R_eff + self.therm_res_ext) * R_eff)
@@ -99,11 +100,15 @@ class TegPowerCalculator:
             print("The output power is forced to 0.\n")
             return 0
 
-        input_V_r = np.array([self.alpha * self.dT_tem, self.el_res]).reshape(1,-1)
+        input_V_r = np.array([self.alpha * self.dT_tem, self.el_res + self.el_res_parasitic]).reshape(1,-1)
         eff = self.custom_func_efficiency(input_V_r, *self.popt_efficiency)[0]
         r_in = self.custom_func_input_resistance(input_V_r, *self.popt_input_resistance)
+
+        self.input_volt_teg = (self.alpha * self.dT_tem)
+
+        self.input_volt_dc_dc = (self.alpha * self.dT_tem) / (self.el_res + self.el_res_parasitic + r_in) * r_in
         
-        w = eff * (self.alpha * self.dT_tem) ** 2 / (self.el_res + r_in)
+        w = eff * (self.alpha * self.dT_tem) ** 2 / (self.el_res + self.el_res_parasitic + r_in)
         return w * 1000
 
         # Function for calculation the generated power in mW
@@ -115,7 +120,7 @@ class TegPowerCalculator:
 
         self.dT_tem = self.dT/ (R_eff + self.therm_res_ext) * R_eff
 
-        r_in = self.custom_func_input_resistance(np.array([self.alpha * self.dT_tem, self.el_res]).reshape(1,-1), 
+        r_in = self.custom_func_input_resistance(np.array([self.alpha * self.dT_tem, self.el_res + self.el_res_parasitic]).reshape(1,-1), 
                                                 *self.popt_input_resistance)[0]
 
         # Check the boundaries
@@ -124,10 +129,11 @@ class TegPowerCalculator:
             print("The output power is forced to 0.\n")
             return 0
 
-        input_V_r = np.array([self.alpha * self.dT_tem, self.el_res]).reshape(1,-1)
+        input_V_r = np.array([self.alpha * self.dT_tem, self.el_res + self.el_res_parasitic]).reshape(1,-1)
         eff = self.custom_func_efficiency(input_V_r, *self.popt_efficiency)[0]
         r_in = self.custom_func_input_resistance(input_V_r, *self.popt_input_resistance)
         
-        w = eff * (self.alpha * self.dT_tem) ** 2 / (self.el_res + r_in)
+        w = eff * (self.alpha * self.dT_tem) ** 2 / (self.el_res + self.el_res_parasitic + r_in)
         return w * 1000
+
     
